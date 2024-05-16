@@ -1,0 +1,1200 @@
+---
+title: "Climate Change Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: 
+      version: 4
+      bootswatch: yeti
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+library(dygraphs)
+library(xts)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(leaflet)
+library(sp)
+library(raster)
+library(mapview)
+library(leafsync)
+library(glue)
+library(htmltools)
+
+#author: Wanda Bodnar
+
+## Data sources: 
+#https://climate.metoffice.cloud/dashboard.html,
+#https://www.metoffice.gov.uk/pub/data/weather/uk/climate/datasets/Tmean/date/UK.txt,
+#https://www.metoffice.gov.uk/pub/data/weather/uk/climate/stationdata/heathrowdata.txt,
+##https://www.kaggle.com/datasets/noahx1/london-weather-2000-2023,
+#https://psmsl.org/data/, 
+#https://www.sciencedirect.com/science/article/pii/S0079661121000112?via%3Dihub#s0180, 
+#https://uk-cri.org/
+```
+
+Global
+=====================================
+
+Column {data-width=550}
+-------------------------------------
+### Atmospheric carbon-dioxide concentration
+
+```{r}
+mauna <- read.csv(url("https://climate.metoffice.cloud/formatted_data/co2_Mauna%20Loa%20CO2.csv"))
+mauna$Year <- as.numeric(mauna$Year)
+mauna <- mauna %>%
+  group_by(Year) %>%
+  dplyr::summarize(Mean_Mauna = mean(Mauna.Loa.CO2..ppm., na.rm = TRUE))
+
+NOAA <- read.csv(url("https://climate.metoffice.cloud/formatted_data/co2_NOAA%20CO2.csv"))
+NOAA$Year <- as.numeric(NOAA$Year)
+NOAA <- NOAA %>%
+  group_by(Year) %>%
+  dplyr::summarize(Mean_NOAA = mean(NOAA.CO2..ppm., na.rm = TRUE))
+
+WDCGG <- read.csv(url("https://climate.metoffice.cloud/formatted_data/co2_WDCGG%20CO2.csv"))
+WDCGG$Year <- as.numeric(WDCGG$Year)
+WDCGG <- WDCGG %>%
+  group_by(Year) %>%
+  dplyr::summarize(Mean_WDCGG = mean(WDCGG.CO2..ppm., na.rm = TRUE))
+
+carbon <- merge(mauna, NOAA, by = "Year", all = T)
+
+carbon <- merge(carbon, WDCGG, by = "Year")
+
+names(carbon)[names(carbon) == "Mean_Mauna"] <- "Mauna Loa"
+names(carbon)[names(carbon) == "Mean_NOAA"] <- "NOAA"
+names(carbon)[names(carbon) == "Mean_WDCGG"] <- "WDCGG"
+
+dygraph(carbon, main = "") %>%
+  dyOptions(colors = RColorBrewer::brewer.pal(3, "Set3")) %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyAxis("y", label = "Parts per million (ppm)") %>%
+  dyRangeSelector() 
+```
+
+### Mean temperature difference from 1850-1900
+
+```{r}
+HadCRUT5 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/gmt_HadCRUT5.csv"))
+HadCRUT5$Year <- as.numeric(HadCRUT5$Year)
+
+NOAA <- read.csv(url("https://climate.metoffice.cloud/formatted_data/gmt_NOAAGlobalTemp.csv"))
+NOAA$Year <- as.numeric(NOAA$Year)
+
+berkeley <- read.csv(url("https://climate.metoffice.cloud/formatted_data/gmt_Berkeley%20Earth.csv"))
+berkeley$Year <- as.numeric(berkeley$Year)
+
+temp <- merge(HadCRUT5, NOAA, by = "Year", all = T)
+
+temp <- merge(temp, berkeley, by = "Year", all = T)
+
+temp <- subset(temp, select= -c(HadCRUT5.uncertainty, NOAAGlobalTemp.uncertainty, Berkeley.Earth.uncertainty))
+
+names(temp)[names(temp) == "HadCRUT5..degC."] <- "Met Office"
+names(temp)[names(temp) == "NOAAGlobalTemp..degC."] <- "NOAA"
+names(temp)[names(temp) == "Berkeley.Earth..degC."] <- "Berkeley Earth"
+
+dygraph(temp, main = "") %>%
+  dyOptions(colors = RColorBrewer::brewer.pal(3, "Dark2")) %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyAxis("y", label = "Temperature (°C)") %>%
+  dyRangeSelector() 
+```   
+
+Row {data-height=500}
+-------------------------------------
+
+### Ocean heat content difference from 1981-2010
+
+```{r}
+EN.4.2.2.c14 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_EN.4.2.2.c14.csv"))
+EN.4.2.2.c14$Year <- as.numeric(EN.4.2.2.c14$Year)
+
+Levitus <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_Levitus.csv"))
+Levitus$Year <- as.numeric(Levitus$Year)
+
+EN.4.2.2.c13 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_EN.4.2.2.c13.csv"))
+EN.4.2.2.c13$Year <- as.numeric(EN.4.2.2.c13$Year)
+
+EN.4.2.2.g10 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_EN.4.2.2.g10.csv"))
+EN.4.2.2.g10$Year <- as.numeric(EN.4.2.2.g10$Year)
+
+EN.4.2.2.l09 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_EN.4.2.2.l09.csv"))
+EN.4.2.2.l09$Year <- as.numeric(EN.4.2.2.l09$Year)
+
+IAP <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_IAP.csv"))
+IAP$Year <- as.numeric(IAP$Year)
+
+JMA <- read.csv(url("https://climate.metoffice.cloud/formatted_data/ohc_JMA.csv"))
+JMA$Year <- as.numeric(JMA$Year)
+
+oceanheat <- merge(EN.4.2.2.c14, Levitus, by = "Year", all = T)
+
+oceanheat <- merge(oceanheat, EN.4.2.2.c13, by = "Year", all = T)
+
+oceanheat <- merge(oceanheat, EN.4.2.2.g10, by = "Year", all = T)
+
+oceanheat <- merge(oceanheat, EN.4.2.2.l09, by = "Year", all = T)
+
+oceanheat <- merge(oceanheat, IAP, by = "Year", all = T)
+
+oceanheat <- merge(oceanheat, JMA, by = "Year", all = T)
+
+oceanheat <- subset(oceanheat, select= -c(EN.4.2.2.c14.uncertainty, 
+                                        Levitus.uncertainty,
+                                        EN.4.2.2.c13.uncertainty,
+                                        EN.4.2.2.g10.uncertainty,
+                                        EN.4.2.2.l09.uncertainty,
+                                        IAP.uncertainty,
+                                        JMA.uncertainty))
+
+names(oceanheat)[names(oceanheat) == "EN.4.2.2.c14..10ZJ."] <- "EN.4.2.2.c14"
+names(oceanheat)[names(oceanheat) == "Levitus..10ZJ."] <- "Levitus"
+names(oceanheat)[names(oceanheat) == "EN.4.2.2.c13..10ZJ."] <- "EN.4.2.2.c13"
+names(oceanheat)[names(oceanheat) == "EN.4.2.2.g10..10ZJ."] <- "EN.4.2.2.g10"
+names(oceanheat)[names(oceanheat) == "EN.4.2.2.l09..10ZJ."] <- "EN.4.2.2.l09"
+names(oceanheat)[names(oceanheat) == "IAP..10ZJ."] <- "IAP"
+names(oceanheat)[names(oceanheat) == "JMA..10ZJ."] <- "JMA"
+
+dygraph(oceanheat, main = "") %>%
+  dyOptions(colors = RColorBrewer::brewer.pal(7, "Dark2")) %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyAxis("y", label = "10<sup>22</sup> Joules") %>%
+  dyRangeSelector() 
+```
+
+### Sea level difference from 1981-2010
+
+```{r}
+palmer <- read.csv(url("https://climate.metoffice.cloud/formatted_data/sea_level_lt_Palmer%20et%20al.%202021.csv"))
+palmer$Year <- as.numeric(palmer$Year)
+
+CW2011 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/sea_level_lt_CW2011.csv"))
+CW2011$Year <- as.numeric(CW2011$Year)
+
+HA2015 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/sea_level_lt_HA2015.csv"))
+HA2015$Year <- as.numeric(HA2015$Year)
+
+DA2019 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/sea_level_lt_DA2019.csv"))
+DA2019$Year <- as.numeric(DA2019$Year)
+
+FR2020 <- read.csv(url("https://climate.metoffice.cloud/formatted_data/sea_level_lt_FR2020.csv"))
+FR2020$Year <- as.numeric(FR2020$Year)
+
+sealevel <- merge(palmer, CW2011, by = "Year", all = T)
+
+sealevel <- merge(sealevel, HA2015, by = "Year", all = T)
+
+sealevel <- merge(sealevel, DA2019, by = "Year", all = T)
+
+sealevel <- merge(sealevel, FR2020, by = "Year", all = T)
+
+sealevel <- subset(sealevel, select= -c(Palmer.et.al..2021.uncertainty, 
+                                          CW2011.uncertainty,
+                                          HA2015.uncertainty,
+                                          DA2019.uncertainty,
+                                          FR2020.uncertainty))
+
+names(sealevel)[names(sealevel) == "Palmer.et.al..2021..mm."] <- "Palmer et al. 2021"
+names(sealevel)[names(sealevel) == "CW2011..mm."] <- "CW2011"
+names(sealevel)[names(sealevel) == "HA2015..mm."] <- "HA2015"
+names(sealevel)[names(sealevel) == "DA2019..mm."] <- "DA2019"
+names(sealevel)[names(sealevel) == "FR2020..mm."] <- "FR2020"
+
+dygraph(sealevel, main = "") %>%
+  dyOptions(colors = RColorBrewer::brewer.pal(5, "Set2")) %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyAxis("y", label = "Milimetres (mm)") %>%
+  dyRangeSelector() 
+``` 
+
+
+United Kingdom & London
+=====================================
+
+Column {data-width=550}
+-------------------------------------
+### UK annual mean air temperature
+```{r}
+
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data")
+
+uk <- read.csv("uk_temp.csv")
+
+dygraph(uk, main = "") %>% 
+  dySeries("ann", label = "°C") %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyAxis("y", label = "Temperature (°C)") %>%
+  dyLegend(show = "always", hideOnMouseOut = T) %>%
+  dyRangeSelector() 
+```
+
+### Great Britain sea level from tide gauges
+```{r}
+
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/sea level")
+
+sea <- read.csv("uk2.csv")
+
+dygraph(sea, main = "") %>% 
+  dySeries("mm", label = "mm", color = "lightblue") %>%
+  dyAxis("y", label = "Sea level (mm)") %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.8) %>%
+  dyLegend(show = "always", hideOnMouseOut = T) %>%
+  dyRangeSelector() 
+```
+
+Row {data-height=500}
+-------------------------------------
+
+### London annual maximum and minimum air temperature
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data")
+
+london <- read.csv("london.csv")
+
+london_monthly_combined <- london %>%
+  group_by(year) %>%
+  summarise(across(c(tmax, tmin), mean, na.rm=TRUE))
+
+dygraph(london_monthly_combined, main = "") %>% 
+  dySeries("tmax", label = "Max temperature", color = "red") %>%
+  dySeries("tmin", label = "Min temperature", color = "blue") %>%
+  dyAxis("y", label = "Temperature (°C)") %>%
+  dyLegend(show = "always", hideOnMouseOut = T) %>%
+  dyRangeSelector() 
+```
+
+### London annual mean precipitation
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data")
+
+london <- read.csv("london.csv")
+
+london_monthly_combined <- london %>%
+  group_by(year) %>%
+  summarise(across(c(rain_mm), mean, na.rm=TRUE))
+
+dygraph(london_monthly_combined, main = "") %>% 
+  dySeries("rain_mm", label = "mm", color = "darkblue") %>%
+  dyAxis("y", label = "Rain (mm)") %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyLegend(show = "always", hideOnMouseOut = T) %>%
+  dyRangeSelector() 
+```
+
+### London annual mean wind speed
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data")
+
+wind <- read.csv("wind.csv")
+
+wind_combined <- wind %>%
+  group_by(Year) %>%
+  summarise(across(c(wspd), mean, na.rm=TRUE))
+
+dygraph(wind_combined, main = "") %>% 
+  dySeries("wspd", label = "km/h", color = "green") %>%
+  dyAxis("y", label = "Wind speed (km/h)") %>%
+  dyOptions(fillGraph = TRUE, fillAlpha = 0.1) %>%
+  dyLegend(show = "always", hideOnMouseOut = T) %>%
+  dyRangeSelector() 
+```
+
+
+Temperature {data-navmenu="Thames Estuary"}
+===================================== 
+
+Column {data-width=600}
+-------------------------------------
+
+### Projected path: if global average temperature reaches 2°C by 2100
+
+```{r}
+## 2
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Temperature/2")
+temp2 <- sf::read_sf("2.geojson") 
+
+bins2 <- c(0.8, 1, 1.2, 1.4)
+pal2 <- colorBin(palette = c("#ffc700", "#f9b700", "#f3a700", "#ec9700"), domain = c(min(temp2$y2036), max(temp2$y2076)), bins = bins2)
+
+
+label30_2 <- glue(
+  "<b>Borough: </b> {temp2$location}<br/>",
+  "<b>Median change (°C): </b> {temp2$y2036}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label40_2 <- glue(
+  "<b>Borough: </b> {temp2$location}<br/>",
+  "<b>Median change (°C): </b> {temp2$y2046}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label50_2 <- glue(
+  "<b>Borough: </b> {temp2$location}<br/>",
+  "<b>Median change (°C): </b> {temp2$y2056}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label60_2 <- glue(
+  "<b>Borough: </b> {temp2$location}<br/>",
+  "<b>Median change (°C): </b> {temp2$y2066}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label70_2 <- glue(
+  "<b>Borough: </b> {temp2$location}<br/>",
+  "<b>Median change (°C): </b> {temp2$y2076}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label80_2 <- glue(
+  "<b>Borough: </b> {temp2$location}<br/>",
+  "<b>Median change (°C): </b> {temp2$y2086}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(temp2) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(label = label30_2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal2(y2036), group = "2030s") %>%
+  addPolygons(label = label40_2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal2(y2046), group = "2040s") %>%
+  addPolygons(label = label50_2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal2(y2056), group = "2050s") %>%
+  addPolygons(label = label60_2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal2(y2066), group = "2060s") %>%
+  addPolygons(label = label70_2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal2(y2076), group = "2070s") %>%
+  addPolygons(label = label80_2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal2(y2086), group = "2080s") %>%
+  leaflet::addLegend(pal = pal2, values = c(min(temp2$y2036), max(temp2$y2086)), 
+            opacity = 0.7, title = "Median change", position = "bottomleft", labFormat = labelFormat(suffix = "°C")) %>% 
+  addLayersControl(
+    overlayGroups = c("2030s", "2040s", "2050s", "2060s", "2070s", "2080s"),
+    options = layersControlOptions(collapsed = F)) %>%
+   hideGroup(c("2040s", "2050s", "2060s", "2070s", "2080s"))
+```
+
+
+### Projected path: if global average temperature reaches 3°C by 2100
+
+```{r}
+## 3
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Temperature/3")
+temp3 <- sf::read_sf("3.geojson") 
+
+bins3 <- c(1, 1.2, 1.4, 1.6, 1.8, 2, 2.2)
+pal3 <- colorBin(palette = c("#f9b700", "#f3a700", "#ec9700", "#e58700", "#dd7800",
+                             "#d56800", "#d56800"), domain = c(min(temp3$y2036), max(temp3$y2086)), bins = bins3)
+
+
+label30_3 <- glue(
+  "<b>Borough: </b> {temp3$location}<br/>",
+  "<b>Median change (°C): </b> {temp3$y2036}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label40_3 <- glue(
+  "<b>Borough: </b> {temp3$location}<br/>",
+  "<b>Median change (°C): </b> {temp3$y2046}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label50_3 <- glue(
+  "<b>Borough: </b> {temp3$location}<br/>",
+  "<b>Median change (°C): </b> {temp3$y2056}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label60_3 <- glue(
+  "<b>Borough: </b> {temp3$location}<br/>",
+  "<b>Median change (°C): </b> {temp3$y2066}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label70_3 <- glue(
+  "<b>Borough: </b> {temp3$location}<br/>",
+  "<b>Median change (°C): </b> {temp3$y2076}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label80_3 <- glue(
+  "<b>Borough: </b> {temp3$location}<br/>",
+  "<b>Median change (°C): </b> {temp3$y2086}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(temp3) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(label = label30_3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal3(y2036), group = "2030s") %>%
+  addPolygons(label = label40_3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal3(y2046), group = "2040s") %>%
+  addPolygons(label = label50_3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal3(y2056), group = "2050s") %>%
+  addPolygons(label = label60_3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal3(y2066), group = "2060s") %>%
+  addPolygons(label = label70_3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal3(y2076), group = "2070s") %>%
+  addPolygons(label = label80_3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal3(y2086), group = "2080s") %>%
+  leaflet::addLegend(pal = pal3, values = c(min(temp3$y2036), max(temp3$y2086)), 
+            opacity = 0.7, title = "Median change", position = "bottomleft", labFormat = labelFormat(suffix = "°C")) %>% 
+  addLayersControl(
+    overlayGroups = c("2030s", "2040s", "2050s", "2060s", "2070s", "2080s"),
+    options = layersControlOptions(collapsed = F)) %>%
+  hideGroup(c("2040s", "2050s", "2060s", "2070s", "2080s"))
+```
+
+### Projected path: if global average temperature reaches 4°C by 2100
+
+```{r}
+## 4
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Temperature/4")
+
+temp4 <- sf::read_sf("4.geojson") 
+
+bins4 <- c(1, 1.2, 1.4, 1.6, 1.8, 2, 2.2, 2.4, 2.6, 2.8, 3)
+pal4 <- colorBin(palette = c("#f9b700", "#f3a700", "#ec9700", "#e58700", "#dd7800",
+                             "#d56800", "#d56800", "#cc5800", "#c24700", "#b83600", "#ae2200"), 
+                 domain = c(min(temp4$y2036), max(temp4$y2086)), bins = bins4)
+
+
+label30_4 <- glue(
+  "<b>Borough: </b> {temp4$location}<br/>",
+  "<b>Median change (°C): </b> {temp4$y2036}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label40_4 <- glue(
+  "<b>Borough: </b> {temp4$location}<br/>",
+  "<b>Median change (°C): </b> {temp4$y2046}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label50_4 <- glue(
+  "<b>Borough: </b> {temp4$location}<br/>",
+  "<b>Median change (°C): </b> {temp4$y2056}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label60_4 <- glue(
+  "<b>Borough: </b> {temp4$location}<br/>",
+  "<b>Median change (°C): </b> {temp4$y2066}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label70_4 <- glue(
+  "<b>Borough: </b> {temp4$location}<br/>",
+  "<b>Median change (°C): </b> {temp4$y2076}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label80_4 <- glue(
+  "<b>Borough: </b> {temp4$location}<br/>",
+  "<b>Median change (°C): </b> {temp4$y2086}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(temp4) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(label = label30_4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal4(y2036), group = "2030s") %>%
+  addPolygons(label = label40_4, 
+             weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+             highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal4(y2046), group = "2040s") %>%
+  addPolygons(label = label50_4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal4(y2056), group = "2050s") %>%
+  addPolygons(label = label60_4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal4(y2066), group = "2060s") %>%
+  addPolygons(label = label70_4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7,
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal4(y2076), group = "2070s") %>%
+  addPolygons(label = label80_4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal4(y2086), group = "2080s") %>%
+  leaflet::addLegend(pal = pal4, values = c(min(temp4$y2036), max(temp4$y2086)), 
+            opacity = 0.7, title = "Median change", position = "bottomleft", labFormat = labelFormat(suffix = "°C")) %>% 
+  addLayersControl(
+    overlayGroups = c("2030s", "2040s", "2050s", "2060s", "2070s", "2080s"),
+    options = layersControlOptions(collapsed = F)) %>%
+  hideGroup(c("2040s", "2050s", "2060s", "2070s", "2080s"))
+```
+
+
+Row 
+-------------------------------------
+
+### Projected median temperature (°C) change averaged across the riparian boroughs
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Temperature")
+
+ave <- read.csv("average.csv")
+
+ave$year <- as.numeric(ave$year)
+
+dygraph(ave, main = "") %>%
+  dyAxis("y", label = "Temperature change (°C)") %>%
+  dySeries("X2_value", label = "2°C", color = "green") %>%
+  dySeries("X3_value", label = "3°C", color = "orange") %>%
+  dySeries("X4_value", label = "4°C", color = "red") %>%
+  dyRangeSelector() 
+```
+
+Rainfall {data-navmenu="Thames Estuary"}
+===================================== 
+
+Column {data-width=600}
+-------------------------------------
+
+### Projected path: if global average temperature reaches 2°C by 2100
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Rainfall/2")
+rain2 <- sf::read_sf("2.geojson") 
+                   
+bins_r2 <- c(0, -1, -2, -3, -4)
+pal_r2 <- colorBin(palette = c("#f5f5f5", "#c7eae5", "#80cdc1", "#35978f", "#01665e"), domain = c(min(rain2$y2076), max(rain2$y2036)), bins = bins_r2)
+
+
+label30_r2 <- glue(
+  "<b>Borough: </b> {rain2$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain2$y2036}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label40_r2 <- glue(
+  "<b>Borough: </b> {rain2$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain2$y2046}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label50_r2 <- glue(
+  "<b>Borough: </b> {rain2$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain2$y2056}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label60_r2 <- glue(
+  "<b>Borough: </b> {rain2$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain2$y2066}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label70_r2 <- glue(
+  "<b>Borough: </b> {rain2$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain2$y2076}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label80_r2 <- glue(
+  "<b>Borough: </b> {rain2$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain2$y2086}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(rain2) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(label = label30_r2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r2(y2036), group = "2030s") %>%
+  addPolygons(label = label40_r2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r2(y2046), group = "2040s") %>%
+  addPolygons(label = label50_r2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r2(y2056), group = "2050s") %>%
+  addPolygons(label = label60_r2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r2(y2066), group = "2060s") %>%
+  addPolygons(label = label70_r2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r2(y2076), group = "2070s") %>%
+  addPolygons(label = label80_r2, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r2(y2086), group = "2080s") %>%
+  leaflet::addLegend(pal = pal_r2, values = c(min(rain2$y2076), max(rain2$y2036)), 
+                     opacity = 0.7, title = "Median change", position = "bottomleft", labFormat = labelFormat(suffix = "%")) %>% 
+  addLayersControl(
+    overlayGroups = c("2030s", "2040s", "2050s", "2060s", "2070s", "2080s"),
+    options = layersControlOptions(collapsed = F)) %>%
+  hideGroup(c("2040s", "2050s", "2060s", "2070s", "2080s"))
+```
+
+
+### Projected path: if global average temperature reaches 3°C by 2100
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Rainfall/3")
+rain3<- sf::read_sf("3.geojson") 
+                   
+bins_r3 <- c(0, -1, -2, -3, -4, -5, -6)
+pal_r3 <- colorBin(palette = c("#dfc27d", "#f6e8c3", "#f5f5f5", "#c7eae5", "#80cdc1", "#35978f", "#01665e"), domain = c(min(rain3$y2086), max(rain3$y2036)), bins = bins_r3)
+
+
+label30_r3 <- glue(
+  "<b>Borough: </b> {rain3$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain3$y2036}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label40_r3 <- glue(
+  "<b>Borough: </b> {rain3$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain3$y2046}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label50_r3 <- glue(
+  "<b>Borough: </b> {rain3$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain3$y2056}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label60_r3 <- glue(
+  "<b>Borough: </b> {rain3$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain3$y2066}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label70_r3 <- glue(
+  "<b>Borough: </b> {rain3$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain3$y2076}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label80_r3 <- glue(
+  "<b>Borough: </b> {rain3$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain3$y2086}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(rain3) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(label = label30_r3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r3(y2036), group = "2030s") %>%
+  addPolygons(label = label40_r3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r3(y2046), group = "2040s") %>%
+  addPolygons(label = label50_r3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r3(y2056), group = "2050s") %>%
+  addPolygons(label = label60_r3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r3(y2066), group = "2060s") %>%
+  addPolygons(label = label70_r3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r3(y2076), group = "2070s") %>%
+  addPolygons(label = label80_r3, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r3(y2086), group = "2080s") %>%
+  leaflet::addLegend(pal = pal_r3, values = c(min(rain3$y2086), max(rain3$y2036)), 
+                     opacity = 0.7, title = "Median change", position = "bottomleft", labFormat = labelFormat(suffix = "%")) %>% 
+  addLayersControl(
+    overlayGroups = c("2030s", "2040s", "2050s", "2060s", "2070s", "2080s"),
+    options = layersControlOptions(collapsed = F)) %>%
+  hideGroup(c("2040s", "2050s", "2060s", "2070s", "2080s"))
+```
+
+### Projected path: if global average temperature reaches 4°C by 2100
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Rainfall/4")
+rain4<- sf::read_sf("4.geojson") 
+                   
+bins_r4 <- c(0, -1, -2, -3, -4, -5, -6, -7, -8)
+pal_r4 <- colorBin(palette = c("#8c510a", "#bf812d", "#dfc27d", "#f6e8c3", "#f5f5f5", "#c7eae5", "#80cdc1", "#35978f", "#01665e"), domain = c(min(rain4$y2086), max(rain4$y2036)), bins = bins_r4)
+
+
+label30_r4 <- glue(
+  "<b>Borough: </b> {rain4$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain4$y2036}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label40_r4 <- glue(
+  "<b>Borough: </b> {rain4$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain4$y2046}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label50_r4 <- glue(
+  "<b>Borough: </b> {rain4$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain4$y2056}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label60_r4 <- glue(
+  "<b>Borough: </b> {rain4$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain4$y2066}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label70_r4 <- glue(
+  "<b>Borough: </b> {rain4$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain4$y2076}<br/>") %>%
+  lapply(htmltools::HTML)
+
+label80_r4 <- glue(
+  "<b>Borough: </b> {rain4$LAD22NM}<br/>",
+  "<b>Median change (%): </b> {rain4$y2086}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(rain4) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(label = label30_r4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r4(y2036), group = "2030s") %>%
+  addPolygons(label = label40_r4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r4(y2046), group = "2040s") %>%
+  addPolygons(label = label50_r4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r4(y2056), group = "2050s") %>%
+  addPolygons(label = label60_r4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r4(y2066), group = "2060s") %>%
+  addPolygons(label = label70_r4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r4(y2076), group = "2070s") %>%
+  addPolygons(label = label80_r4, 
+              weight = 1,
+              opacity = 1,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.7, 
+              highlightOptions = highlightOptions(
+                weight = 1,
+                color = "white",
+                dashArray = "0",
+                fillOpacity = 1,
+                bringToFront = TRUE),
+              fillColor = ~pal_r4(y2086), group = "2080s") %>%
+  leaflet::addLegend(pal = pal_r4, values = c(min(rain4$y2086), max(rain4$y2036)), 
+                     opacity = 0.7, title = "Median change", position = "bottomleft", labFormat = labelFormat(suffix = "%")) %>% 
+  addLayersControl(
+    overlayGroups = c("2030s", "2040s", "2050s", "2060s", "2070s", "2080s"),
+    options = layersControlOptions(collapsed = F)) %>%
+  hideGroup(c("2040s", "2050s", "2060s", "2070s", "2080s"))
+```
+
+
+Row 
+-------------------------------------
+
+### Projected median rainfall (%) change averaged across the riparian boroughs
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Rainfall")
+
+rain_ave <- read.csv("ave_rainfall.csv")
+
+rain_ave$year <- as.numeric(rain_ave$year)
+
+dygraph(rain_ave, main = "") %>%
+  dyAxis("y", label = "Rainfall change (%)") %>%
+  dySeries("X2_value", label = "2°C", color = "#01665e") %>%
+  dySeries("X3_value", label = "3°C", color = "#c7eae5") %>%
+  dySeries("X4_value", label = "4°C", color = "#8c510a") %>%
+  dyRangeSelector()
+```
+
+
+Flood & sea level {data-navmenu="Thames Estuary"}
+===================================== 
+
+Column {data-width=800}
+-------------------------------------
+
+### Risk of flooding from rivers and the sea
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/UK-CRI/Flood")
+
+flood <- sf::read_sf("flood.geojson") 
+b <- sf::read_sf("b.geojson") 
+
+pal_f <- colorFactor(palette = c("#084594", "#2171b5", "#4292c6", "#6baed6"), domain = flood$prob_4band)
+
+label_f <- glue(
+  "<b>Probability level: </b> {flood$prob_4band}<br/>") %>%
+  lapply(htmltools::HTML)
+
+leaflet(flood, options = leafletOptions(zoomControl = T,
+                                        minZoom = 9, maxZoom = 20)) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(label = label_f, stroke = FALSE, smoothFactor = 0.2, fillOpacity = 1, fillColor = ~pal_f(prob_4band)) %>%
+  addPolygons(data = b, fill = FALSE, weight = 1.5, color = "darkgrey") %>%
+  leaflet::addLegend(colors = c("#084594", "#2171b5", "#4292c6", "#6baed6"),
+                     values = flood$prob_4band, 
+                     labels = c("High: greater than 1 in 30 (3.3%)", 
+                                "Medium: between 1 in 30 (3.3%) and 1 in 100 (1%)", 
+                                "Low: between 1 in 100 (1%) and 1 in 1000 (0.1%)", 
+                                "Very Low: less than 1 in 1000(0.1%)"), 
+                     opacity = 1, title = "Risk of flooding", position = "bottomleft")
+```
+
+
+Row
+-------------------------------------
+
+### Projected sea level rise at Southend-on-Sea considering the different representative concentration pathways (RCP)
+
+```{r}
+setwd("C:/Users/bodna/Documents/Work/Roadmap to Climate Resilience/Working folder/Data/sea level")
+
+s.level <- read.csv("southend.csv")
+
+s.level$year <- as.numeric(s.level$year)
+
+dygraph(s.level, main = "") %>%
+  dyAxis("y", label = "Sea level (cm)") %>%
+  dySeries("SSP1.2.6", label = "RCP 2.6", color = "green") %>%
+  dySeries("SSP2.4.5", label = "RCP 4.5", color = "orange") %>%
+  dySeries("SSP5.8.5", label = "RCP 8.5", color = "red") %>%
+  dyRangeSelector()
+```
